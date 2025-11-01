@@ -1,19 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { getIssues } from '../store/slices/issuesSlice';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 const Issues = () => {
   const dispatch = useDispatch();
+  const [searchParams] = useSearchParams();
   const { issues, loading } = useSelector((state) => state.issues);
   const [filter, setFilter] = useState({});
 
   useEffect(() => {
-    dispatch(getIssues(filter));
-  }, [dispatch]);
+    // Get search query from URL
+    const searchQuery = searchParams.get('search');
+    const initialFilter = {};
+    
+    if (searchQuery) {
+      initialFilter.search = searchQuery;
+    }
+    
+    setFilter(initialFilter);
+    dispatch(getIssues(initialFilter));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, searchParams]);
 
   const handleFilterChange = (key, value) => {
-    const newFilter = { ...filter, [key]: value };
+    // Preserve search query if it exists
+    const searchQuery = searchParams.get('search');
+    const newFilter = { ...filter, [key]: value || undefined };
+    if (searchQuery) {
+      newFilter.search = searchQuery;
+    }
     setFilter(newFilter);
     dispatch(getIssues(newFilter));
   };
@@ -22,7 +38,14 @@ const Issues = () => {
     <div className="min-h-screen bg-[#0f172a] text-white p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8 flex items-center justify-between">
-          <h1 className="text-4xl font-bold text-white">Issues</h1>
+          <div>
+            <h1 className="text-4xl font-bold text-white">Issues</h1>
+            {searchParams.get('search') && (
+              <p className="text-gray-400 mt-2">
+                Searching for: <span className="text-blue-400 font-semibold">"{searchParams.get('search')}"</span>
+              </p>
+            )}
+          </div>
           <Link
             to="/issues/new"
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors flex items-center gap-2"

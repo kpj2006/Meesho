@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { getIssues } from '../store/slices/issuesSlice';
 import { getProjects } from '../store/slices/projectsSlice';
-import { Link } from 'react-router-dom';
-import { activitiesAPI, tasksAPI } from '../services/api';
+import { Link, useNavigate } from 'react-router-dom';
+import { activitiesAPI, tasksAPI, notificationsAPI } from '../services/api';
 
 const Dashboard = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { issues, loading: issuesLoading } = useSelector((state) => state.issues);
   const { projects, loading: projectsLoading } = useSelector((state) => state.projects);
   const { user } = useSelector((state) => state.auth);
@@ -14,13 +15,31 @@ const Dashboard = () => {
   const [activities, setActivities] = useState([]);
   const [myTasks, setMyTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showNewMenu, setShowNewMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     dispatch(getIssues());
     dispatch(getProjects());
     fetchActivities();
     fetchMyTasks();
+    fetchNotifications();
   }, [dispatch, user]);
+
+  // Close menus when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.dropdown-menu') && !event.target.closest('.dropdown-trigger')) {
+        setShowNewMenu(false);
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const fetchActivities = async () => {
     try {
@@ -45,6 +64,44 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const response = await notificationsAPI.getNotifications({ limit: 10, unreadOnly: false });
+      if (response.data.success) {
+        setNotifications(response.data.data || []);
+        setUnreadCount(response.data.data?.filter(n => !n.read).length || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
+
+  const handleMarkAsRead = async (notificationId) => {
+    try {
+      await notificationsAPI.markAsRead(notificationId);
+      fetchNotifications();
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await notificationsAPI.markAllAsRead();
+      fetchNotifications();
+    } catch (error) {
+      console.error('Error marking all as read:', error);
+    }
+  };
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    
+    // Navigate to issues page with search query
+    navigate(`/issues?search=${encodeURIComponent(searchQuery)}`);
   };
 
   const stats = [
@@ -125,28 +182,127 @@ const Dashboard = () => {
 
         {/* Top Search Bar */}
         <div className="mb-8 flex items-center gap-4">
-          <div className="flex-1 relative">
+          <form onSubmit={handleSearch} className="flex-1 relative">
             <input
               type="text"
-              placeholder="Search tasks, projects..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search tasks, projects, issues..."
               className="w-full px-4 py-3 pl-12 bg-[#1e293b] border border-[#334155] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
             <svg className="w-5 h-5 absolute left-4 top-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
+          </form>
+          
+          {/* New Button with Dropdown */}
+          <div className="relative dropdown-trigger">
+            <button
+              onClick={() => setShowNewMenu(!showNewMenu)}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showNewMenu && (
+              <div className="dropdown-menu absolute right-0 mt-2 w-48 bg-[#1e293b] border border-[#334155] rounded-lg shadow-xl z-50">
+                <Link
+                  to="/issues/new"
+                  onClick={() => setShowNewMenu(false)}
+                  className="block px-4 py-3 text-white hover:bg-[#334155] transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Issue
+                </Link>
+                <Link
+                  to="/projects/new"
+                  onClick={() => setShowNewMenu(false)}
+                  className="block px-4 py-3 text-white hover:bg-[#334155] transition-colors flex items-center gap-2 border-t border-[#334155]"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  New Project
+                </Link>
+                {user?.role === 'admin' && (
+                  <Link
+                    to="/admin/tasks"
+                    onClick={() => setShowNewMenu(false)}
+                    className="block px-4 py-3 text-white hover:bg-[#334155] transition-colors flex items-center gap-2 border-t border-[#334155]"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    Assign Task
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
-          <button className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New
-          </button>
-          <button className="p-3 bg-[#1e293b] border border-[#334155] rounded-lg hover:bg-[#334155] transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-            </svg>
-          </button>
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center font-semibold">
+
+          {/* Notifications Button with Dropdown */}
+          <div className="relative dropdown-trigger">
+            <button
+              onClick={() => {
+                setShowNotifications(!showNotifications);
+                if (!showNotifications) fetchNotifications();
+              }}
+              className="relative p-3 bg-[#1e293b] border border-[#334155] rounded-lg hover:bg-[#334155] transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-xs font-bold">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+            {showNotifications && (
+              <div className="dropdown-menu absolute right-0 mt-2 w-80 bg-[#1e293b] border border-[#334155] rounded-lg shadow-xl z-50 max-h-96 overflow-hidden flex flex-col">
+                <div className="px-4 py-3 border-b border-[#334155] flex items-center justify-between">
+                  <h3 className="font-semibold text-white">Notifications</h3>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllAsRead}
+                      className="text-xs text-blue-400 hover:text-blue-300"
+                    >
+                      Mark all as read
+                    </button>
+                  )}
+                </div>
+                <div className="overflow-y-auto max-h-80">
+                  {notifications.length > 0 ? (
+                    notifications.map((notification) => (
+                      <div
+                        key={notification._id}
+                        onClick={() => handleMarkAsRead(notification._id)}
+                        className={`px-4 py-3 hover:bg-[#334155] transition-colors cursor-pointer border-b border-[#334155] ${
+                          !notification.read ? 'bg-blue-500/10' : ''
+                        }`}
+                      >
+                        <p className="text-sm text-white">{notification.message}</p>
+                        <p className="text-xs text-gray-400 mt-1">{formatTimeAgo(notification.createdAt)}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-8 text-center text-gray-400">
+                      <p>No notifications</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center font-semibold cursor-pointer hover:ring-2 ring-blue-400 transition-all">
             {user?.name?.charAt(0).toUpperCase()}
           </div>
         </div>
