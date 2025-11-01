@@ -1,6 +1,24 @@
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// Get API URL from environment or use default
+let API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
+// Ensure API_URL always ends with /api for consistency
+// This fixes the issue where REACT_APP_API_URL might not include /api
+if (!API_URL.endsWith('/api')) {
+  // If it ends with /, remove it and add /api
+  if (API_URL.endsWith('/')) {
+    API_URL = API_URL.slice(0, -1) + '/api';
+  } else {
+    // If it doesn't end with /api, add it
+    API_URL = API_URL + '/api';
+  }
+}
+
+// Log API URL in development for debugging
+if (process.env.NODE_ENV === 'development') {
+  console.log('🔗 API Base URL:', API_URL);
+}
 
 // Create axios instance
 const api = axios.create({
