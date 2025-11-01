@@ -1,12 +1,24 @@
 const mongoose = require('mongoose');
 
+// Cache the connection to prevent multiple connections in serverless
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
 const connectDB = async () => {
   try {
+    // If already connected, return cached connection
+    if (cached.conn) {
+      return cached.conn;
+    }
+
     // Check if MONGODB_URI is set
     if (!process.env.MONGODB_URI) {
       console.error('❌ Error: MONGODB_URI is not defined in environment variables');
       console.error('Please set MONGODB_URI in your .env file');
-      process.exit(1);
+      throw new Error('MONGODB_URI is not defined');
     }
 
     // Validate MongoDB URI format
@@ -14,18 +26,28 @@ const connectDB = async () => {
     if (!uri.includes('mongodb://') && !uri.includes('mongodb+srv://')) {
       console.error('❌ Error: Invalid MongoDB URI format');
       console.error('URI should start with mongodb:// or mongodb+srv://');
-      process.exit(1);
+      throw new Error('Invalid MongoDB URI format');
     }
 
-    // Connection options with timeout
+    // Connection options with timeout (optimized for serverless)
     const options = {
-      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10, // Maintain up to 10 socket connections
+      bufferCommands: false, // Disable mongoose buffering
+      bufferMaxEntries: 0, // Disable mongoose buffering
     };
 
-    const conn = await mongoose.connect(uri, options);
+    // If connection is in progress, wait for it
+    if (!cached.promise) {
+      cached.promise = mongoose.connect(uri, options).then((conn) => {
+        return conn;
+      });
+    }
 
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+    cached.conn = await cached.promise;
+
+    console.log(`✅ MongoDB Connected: ${cached.conn.connection.host}`);
     
     // Handle connection events
     mongoose.connection.on('error', (err) => {
@@ -60,7 +82,11 @@ const connectDB = async () => {
     console.error('   2. Format: mongodb+srv://username:password@cluster.mongodb.net/database');
     console.error('   3. For local: mongodb://localhost:27017/prodsync');
     
-    process.exit(1);
+    // Don't exit in serverless environment
+    if (process.env.VERCEL !== '1') {
+      process.exit(1);
+    }
+    throw error;
   }
 };
 
